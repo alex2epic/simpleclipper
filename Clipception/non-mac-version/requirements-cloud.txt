@@ -15,8 +15,9 @@ soundfile==0.12.1
 
 # AI and Machine Learning (CPU versions for cloud)
 openai-whisper==20231117
-torch==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu
-torchaudio==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.1.0
+torchaudio==2.1.0
 transformers==4.35.2
 
 # Image and Media Processing
@@ -31,9 +32,10 @@ pandas==2.1.4
 matplotlib==3.8.2
 
 # TikTok Uploader Dependencies
+selenium==4.16.0
+webdriver-manager==4.0.1
+python-dotenv==1.0.0
 requests==2.31.0
-selenium==4.15.0
-beautifulsoup4==4.12.2
 
 # API and HTTP
 httpx==0.25.2
