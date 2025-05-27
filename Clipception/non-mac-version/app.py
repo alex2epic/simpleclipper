@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TikTok Auto Clipper Web Interface - Cloud Ready Version
-With secure browser-based TikTok authentication
+With simplified cookie-based TikTok authentication
 """
 
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
@@ -15,11 +15,7 @@ import uuid
 import secrets
 from pathlib import Path
 import re
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
@@ -48,6 +44,176 @@ if TIKTOK_UPLOADER_DIR not in sys.path:
 jobs = {}
 job_lock = threading.Lock()
 
+@app.route('/auth/tiktok/simple', methods=['POST'])
+def simple_tiktok_auth():
+    """Handle super simple TikTok cookie submission"""
+    data = request.json
+    username = data.get('username', '').strip().replace('@', '')
+    cookies_text = data.get('cookies', '').strip()
+    
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+    
+    if not cookies_text:
+        return jsonify({'error': 'Please paste the result from TikTok'}), 400
+    
+    try:
+        # Parse the simple cookie format
+        cookies = parse_simple_cookies(cookies_text)
+        
+        # Validate we have the essential cookies
+        required_cookies = ['sessionid', 'ttwid', 'msToken']
+        missing_cookies = [cookie for cookie in required_cookies if cookie not in cookies]
+        
+        if missing_cookies:
+            return jsonify({
+                'error': f'Missing required cookies: {", ".join(missing_cookies)}. Make sure you\'re logged into TikTok and try again.'
+            }), 400
+        
+        # Test if cookies actually work
+        if not test_tiktok_cookies(cookies):
+            return jsonify({
+                'error': 'These cookies don\'t seem to work. Make sure you\'re logged into TikTok and the cookies are fresh.'
+            }), 400
+        
+        # Save the session
+        save_tiktok_session(username, cookies)
+        
+        # Log success for monitoring
+        print(f"✅ Successfully authenticated TikTok user: {username}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully connected @{username} to TikTok!',
+            'username': username,
+            'expires_in_days': estimate_cookie_lifespan(cookies)
+        })
+        
+    except Exception as e:
+        print(f"❌ TikTok auth error for {username}: {str(e)}")
+        return jsonify({
+            'error': 'Something went wrong processing your cookies. Please try again or contact support.'
+        }), 500
+
+def parse_simple_cookies(cookies_text):
+    """Parse cookies from the simple JavaScript output"""
+    cookies = {}
+    
+    # Remove quotes if present
+    cookies_text = cookies_text.strip('"\'')
+    
+    # Split by semicolon and parse each cookie
+    for cookie_pair in cookies_text.split(';'):
+        cookie_pair = cookie_pair.strip()
+        if '=' in cookie_pair:
+            name, value = cookie_pair.split('=', 1)
+            cookies[name.strip()] = value.strip()
+    
+    return cookies
+
+def test_tiktok_cookies(cookies):
+    """Test if TikTok cookies are valid by making a simple request"""
+    try:
+        # Create a session with the cookies
+        session = requests.Session()
+        
+        # Convert cookies to requests format
+        for name, value in cookies.items():
+            session.cookies.set(name, value, domain='.tiktok.com')
+        
+        # Make a simple request to TikTok
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = session.get('https://www.tiktok.com/api/user/detail/', headers=headers, timeout=10)
+        
+        # If we get a response that's not a login redirect, cookies are good
+        return response.status_code != 401 and 'login' not in response.url.lower()
+        
+    except Exception as e:
+        print(f"Cookie test failed: {e}")
+        return False  # Assume cookies are bad if test fails
+
+def estimate_cookie_lifespan(cookies):
+    """Estimate how long cookies will last (rough guess)"""
+    # This is a rough estimation based on typical TikTok behavior
+    if 'msToken' in cookies:
+        # msToken usually expires quickly
+        return 7  # 1 week estimate
+    else:
+        # Without msToken, might last longer
+        return 30  # 1 month estimate
+
+def save_tiktok_session(username, cookies):
+    """Save TikTok session with metadata"""
+    try:
+        session_data = {
+            'username': username,
+            'cookies': cookies,
+            'created_at': time.time(),
+            'last_used': time.time(),
+            'estimated_expiry': time.time() + (estimate_cookie_lifespan(cookies) * 24 * 3600),
+            'upload_count': 0
+        }
+        
+        session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
+        with open(session_file, 'w') as f:
+            json.dump(session_data, f, indent=2)
+        
+        # Set file permissions
+        os.chmod(session_file, 0o600)  # Only owner can read/write
+        
+    except Exception as e:
+        print(f"Error saving session for {username}: {e}")
+        raise
+
+@app.route('/auth/tiktok/status/<username>')
+def check_tiktok_status(username):
+    """Check the status of a TikTok session"""
+    try:
+        session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
+        
+        if not os.path.exists(session_file):
+            return jsonify({
+                'status': 'not_connected',
+                'message': 'No TikTok account connected'
+            })
+        
+        with open(session_file, 'r') as f:
+            session_data = json.load(f)
+        
+        # Check if cookies are likely expired
+        estimated_expiry = session_data.get('estimated_expiry', 0)
+        days_remaining = (estimated_expiry - time.time()) / (24 * 3600)
+        
+        if days_remaining <= 0:
+            return jsonify({
+                'status': 'expired',
+                'message': 'TikTok session has expired. Please reconnect.',
+                'days_remaining': 0
+            })
+        elif days_remaining <= 3:
+            return jsonify({
+                'status': 'expiring_soon',
+                'message': f'TikTok session expires in {int(days_remaining)} days',
+                'days_remaining': int(days_remaining)
+            })
+        else:
+            return jsonify({
+                'status': 'active',
+                'message': f'TikTok session active ({int(days_remaining)} days remaining)',
+                'days_remaining': int(days_remaining),
+                'upload_count': session_data.get('upload_count', 0),
+                'connected_since': session_data.get('created_at')
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Error checking TikTok status'
+        }), 500
+
 def setup_selenium_driver():
     """Setup headless Chrome for TikTok authentication"""
     chrome_options = Options()
@@ -75,15 +241,14 @@ def save_tiktok_session(username, cookies):
         session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
         with open(session_file, 'w') as f:
             json.dump(cookies, f)
-        # Ensure file is writable
         os.chmod(session_file, 0o666)
     except Exception as e:
         print(f"Error saving session: {e}")
         raise
 
-@app.route('/auth/tiktok', methods=['POST'])
-def tiktok_auth():
-    """Handle TikTok authentication"""
+@app.route('/auth/check', methods=['POST'])
+def check_auth():
+    """Check if user is logged in"""
     data = request.json
     username = data.get('username', '').strip()
     
@@ -91,95 +256,24 @@ def tiktok_auth():
         return jsonify({'error': 'Username is required'}), 400
     
     try:
-        # Generate unique session ID
-        session_id = str(uuid.uuid4())
-        session['auth_session_id'] = session_id
-        
-        # Start authentication in background
-        thread = threading.Thread(
-            target=handle_tiktok_auth,
-            args=(username, session_id)
-        )
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            'status': 'processing',
-            'session_id': session_id,
-            'message': 'Starting TikTok authentication...'
-        })
-        
+        # Check if session file exists
+        session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
+        if os.path.exists(session_file):
+            with open(session_file, 'r') as f:
+                session_data = json.load(f)
+            return jsonify({
+                'status': 'success',
+                'message': 'Already logged in',
+                'username': username
+            })
+        else:
+            return jsonify({
+                'status': 'not_logged_in',
+                'message': 'Please log in to TikTok'
+            })
+            
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-def handle_tiktok_auth(username, session_id):
-    """Handle TikTok authentication in background"""
-    state_file = os.path.join(COOKIES_DIR, f'auth_state-{session_id}.json')
-    
-    try:
-        # Initialize state
-        auth_state = {
-            'status': 'waiting',
-            'message': 'Please log in to TikTok in the popup window',
-            'session_id': session_id
-        }
-        
-        # Save initial state
-        with open(state_file, 'w') as f:
-            json.dump(auth_state, f)
-        os.chmod(state_file, 0o666)
-        
-        driver = setup_selenium_driver()
-        
-        # Navigate to TikTok login
-        driver.get('https://www.tiktok.com/login')
-        
-        # Wait for login form
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="username"]'))
-        )
-        
-        # Wait for successful login (check for session cookie)
-        WebDriverWait(driver, 60).until(
-            lambda d: any('sessionid' in cookie['name'].lower() for cookie in d.get_cookies())
-        )
-        
-        # Get all cookies
-        cookies = driver.get_cookies()
-        
-        # Save session
-        save_tiktok_session(username, cookies)
-        
-        # Update state
-        auth_state.update({
-            'status': 'success',
-            'message': 'Successfully logged in to TikTok',
-            'username': username
-        })
-        
-        with open(state_file, 'w') as f:
-            json.dump(auth_state, f)
-        os.chmod(state_file, 0o666)
-            
-    except Exception as e:
-        # Update state with error
-        auth_state.update({
-            'status': 'error',
-            'message': f'Authentication failed: {str(e)}'
-        })
-        
-        try:
-            with open(state_file, 'w') as f:
-                json.dump(auth_state, f)
-            os.chmod(state_file, 0o666)
-        except:
-            pass
-            
-    finally:
-        try:
-            driver.quit()
-        except:
-            pass
 
 @app.route('/auth/tiktok/status/<session_id>')
 def auth_status(session_id):
