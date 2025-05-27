@@ -335,179 +335,219 @@
         let authCheckInterval = null;
 
         function copyCookieCode() {
-            const code = `copy(document.cookie)`;
+            const code = `(() => {
+            // Get all cookies including HttpOnly ones
+            const cookies = document.cookie;
             
-            navigator.clipboard.writeText(code).then(() => {
-                alert('Cookie code copied! Now:\n1. Open TikTok in a new tab\n2. Press F12 to open Developer Tools\n3. Go to Console tab\n4. Paste and press Enter\n5. Copy the result back here');
+            // Make a request to get the session cookies
+            return fetch('https://www.tiktok.com/api/user/detail/', {
+                credentials: 'include',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.tiktok.com/',
+                    'Origin': 'https://www.tiktok.com'
+                }
+            })
+            .then(response => {
+                // Get the sessionid and ttwid from the response
+                const sessionid = response.headers.get('set-cookie')?.match(/sessionid=([^;]+)/)?.[1];
+                const ttwid = response.headers.get('set-cookie')?.match(/ttwid=([^;]+)/)?.[1];
+                
+                if (!sessionid || !ttwid) {
+                    throw new Error('Could not get required cookies. Please make sure you are logged into TikTok.');
+                }
+                
+                // Get msToken from document.cookie
+                const msToken = document.cookie.split(';')
+                    .find(c => c.trim().startsWith('msToken='))
+                    ?.split('=')[1];
+                    
+                if (!msToken) {
+                    throw new Error('Could not get msToken. Please refresh the page and try again.');
+                }
+                
+                // Return all cookies in the format we need
+                return \`sessionid=\${sessionid}; ttwid=\${ttwid}; msToken=\${msToken}\`;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                return 'Error: ' + error.message;
             });
-        }
-
-        async function loginToTikTok() {
-            const username = document.getElementById('username').value.trim().replace('@', '');
-            const cookies = document.getElementById('cookies').value.trim();
-            
-            if (!username) {
-                alert('Please enter your TikTok username');
-                return;
-            }
-            
-            if (!cookies) {
-                alert('Please paste the cookie result from TikTok');
-                return;
-            }
-
-            // Show loading state
-            document.getElementById('loginStatus').classList.remove('hidden');
-            document.getElementById('loginMessage').textContent = 'Connecting to TikTok...';
-
-            try {
-                const response = await fetch('/auth/tiktok/simple', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ 
-                        username,
-                        cookies
-                    })
-                });
-
-                const data = await response.json();
-                
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                if (data.status === 'success') {
-                    // Login successful
-                    document.getElementById('loginSection').classList.add('hidden');
-                    document.getElementById('accountSection').classList.remove('hidden');
-                    document.getElementById('accountName').textContent = `@${username}`;
-                    document.getElementById('sessionStatus').textContent = `Session expires in ${data.expires_in_days} days`;
-                    
-                    // Clear the form
-                    document.getElementById('username').value = '';
-                    document.getElementById('cookies').value = '';
-                    
-                    // Start checking session status
-                    checkSessionStatus(username);
-                }
-            } catch (error) {
-                document.getElementById('loginMessage').textContent = `Error: ${error.message}`;
-                document.getElementById('loginSpinner').classList.add('hidden');
-            }
-        }
-
-        async function checkSessionStatus(username) {
-            try {
-                const response = await fetch(`/auth/tiktok/status/${username}`);
-                const data = await response.json();
-                
-                if (data.status === 'expired') {
-                    document.getElementById('sessionStatus').textContent = 'Session expired - Please reconnect';
-                    document.getElementById('sessionStatus').classList.add('text-red-500');
-                } else if (data.status === 'expiring_soon') {
-                    document.getElementById('sessionStatus').textContent = `Session expires in ${data.days_remaining} days`;
-                    document.getElementById('sessionStatus').classList.add('text-yellow-500');
-                } else if (data.status === 'active') {
-                    document.getElementById('sessionStatus').textContent = `Session active (${data.days_remaining} days remaining)`;
-                    document.getElementById('sessionStatus').classList.add('text-green-500');
-                }
-            } catch (error) {
-                console.error('Error checking session status:', error);
-            }
-        }
-
-        async function logoutFromTikTok() {
-            try {
-                const response = await fetch('/api/logout', { method: 'POST' });
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('accountSection').classList.add('hidden');
-                    document.getElementById('loginSection').classList.remove('hidden');
-                    document.getElementById('username').value = '';
-                    document.getElementById('cookies').value = '';
-                }
-            } catch (error) {
-                console.error('Logout failed:', error);
-            }
-        }
-
-        // Form submission
-        document.getElementById('processForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const videoUrl = document.getElementById('videoUrl').value.trim();
-            const baseTitle = document.getElementById('baseTitle').value.trim();
-            const maxUploads = document.getElementById('maxUploads').value;
-
-            if (!videoUrl || !baseTitle) {
-                alert('Please fill in all required fields');
-                return;
-            }
-
-            // Show processing status
-            document.getElementById('processingStatus').classList.remove('hidden');
-            document.getElementById('processingMessage').textContent = 'Starting video processing...';
-            document.getElementById('progressBar').style.width = '0%';
-
-            try {
-                const response = await fetch('/api/submit_job', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        video_url: videoUrl,
-                        base_title: baseTitle,
-                        max_uploads: parseInt(maxUploads)
-                    })
-                });
-
-                const data = await response.json();
-                
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-
-                // Start polling for job status
-                pollJobStatus(data.job_id);
-
-            } catch (error) {
-                document.getElementById('processingMessage').textContent = `Error: ${error.message}`;
-                document.getElementById('processingSpinner').classList.add('hidden');
-            }
+        })()`;
+        
+        navigator.clipboard.writeText(code).then(() => {
+            alert('Cookie code copied! Now:\n1. Open TikTok in a new tab\n2. Press F12 to open Developer Tools\n3. Go to Console tab\n4. Paste and press Enter\n5. Copy the result back here');
         });
+    }
 
-        async function pollJobStatus(jobId) {
-            const checkStatus = async () => {
-                try {
-                    const response = await fetch(`/api/job_status/${jobId}`);
-                    const data = await response.json();
-
-                    if (data.error) {
-                        throw new Error(data.error);
-                    }
-
-                    document.getElementById('processingMessage').textContent = data.message;
-                    document.getElementById('progressBar').style.width = `${data.progress}%`;
-
-                    if (data.status === 'completed') {
-                        document.getElementById('processingSpinner').classList.add('hidden');
-                        clearInterval(statusInterval);
-                    } else if (data.status === 'failed') {
-                        document.getElementById('processingSpinner').classList.add('hidden');
-                        clearInterval(statusInterval);
-                    }
-
-                } catch (error) {
-                    console.error('Status check failed:', error);
-                }
-            };
-
-            const statusInterval = setInterval(checkStatus, 2000);
+    async function loginToTikTok() {
+        const username = document.getElementById('username').value.trim().replace('@', '');
+        const cookies = document.getElementById('cookies').value.trim();
+        
+        if (!username) {
+            alert('Please enter your TikTok username');
+            return;
         }
+        
+        if (!cookies) {
+            alert('Please paste the cookie result from TikTok');
+            return;
+        }
+
+        // Show loading state
+        document.getElementById('loginStatus').classList.remove('hidden');
+        document.getElementById('loginMessage').textContent = 'Connecting to TikTok...';
+
+        try {
+            const response = await fetch('/auth/tiktok/simple', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    username,
+                    cookies
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            if (data.status === 'success') {
+                // Login successful
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('accountSection').classList.remove('hidden');
+                document.getElementById('accountName').textContent = `@${username}`;
+                document.getElementById('sessionStatus').textContent = `Session expires in ${data.expires_in_days} days`;
+                
+                // Clear the form
+                document.getElementById('username').value = '';
+                document.getElementById('cookies').value = '';
+                
+                // Start checking session status
+                checkSessionStatus(username);
+            }
+        } catch (error) {
+            document.getElementById('loginMessage').textContent = `Error: ${error.message}`;
+            document.getElementById('loginSpinner').classList.add('hidden');
+        }
+    }
+
+    async function checkSessionStatus(username) {
+        try {
+            const response = await fetch(`/auth/tiktok/status/${username}`);
+            const data = await response.json();
+            
+            if (data.status === 'expired') {
+                document.getElementById('sessionStatus').textContent = 'Session expired - Please reconnect';
+                document.getElementById('sessionStatus').classList.add('text-red-500');
+            } else if (data.status === 'expiring_soon') {
+                document.getElementById('sessionStatus').textContent = `Session expires in ${data.days_remaining} days`;
+                document.getElementById('sessionStatus').classList.add('text-yellow-500');
+            } else if (data.status === 'active') {
+                document.getElementById('sessionStatus').textContent = `Session active (${data.days_remaining} days remaining)`;
+                document.getElementById('sessionStatus').classList.add('text-green-500');
+            }
+        } catch (error) {
+            console.error('Error checking session status:', error);
+        }
+    }
+
+    async function logoutFromTikTok() {
+        try {
+            const response = await fetch('/api/logout', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('accountSection').classList.add('hidden');
+                document.getElementById('loginSection').classList.remove('hidden');
+                document.getElementById('username').value = '';
+                document.getElementById('cookies').value = '';
+            }
+        } catch (error) {
+            console.error('Logout failed:', error);
+        }
+    }
+
+    // Form submission
+    document.getElementById('processForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const videoUrl = document.getElementById('videoUrl').value.trim();
+        const baseTitle = document.getElementById('baseTitle').value.trim();
+        const maxUploads = document.getElementById('maxUploads').value;
+
+        if (!videoUrl || !baseTitle) {
+            alert('Please fill in all required fields');
+            return;
+        }
+
+        // Show processing status
+        document.getElementById('processingStatus').classList.remove('hidden');
+        document.getElementById('processingMessage').textContent = 'Starting video processing...';
+        document.getElementById('progressBar').style.width = '0%';
+
+        try {
+            const response = await fetch('/api/submit_job', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    video_url: videoUrl,
+                    base_title: baseTitle,
+                    max_uploads: parseInt(maxUploads)
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            // Start polling for job status
+            pollJobStatus(data.job_id);
+
+        } catch (error) {
+            document.getElementById('processingMessage').textContent = `Error: ${error.message}`;
+            document.getElementById('processingSpinner').classList.add('hidden');
+        }
+    });
+
+    async function pollJobStatus(jobId) {
+        const checkStatus = async () => {
+            try {
+                const response = await fetch(`/api/job_status/${jobId}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                document.getElementById('processingMessage').textContent = data.message;
+                document.getElementById('progressBar').style.width = `${data.progress}%`;
+
+                if (data.status === 'completed') {
+                    document.getElementById('processingSpinner').classList.add('hidden');
+                    clearInterval(statusInterval);
+                } else if (data.status === 'failed') {
+                    document.getElementById('processingSpinner').classList.add('hidden');
+                    clearInterval(statusInterval);
+                }
+
+            } catch (error) {
+                console.error('Status check failed:', error);
+            }
+        };
+
+        const statusInterval = setInterval(checkStatus, 2000);
+    }
     </script>
 </body>
 </html> 
