@@ -2,22 +2,30 @@ services:
   # Main Web Application
   - type: web
     name: tiktok-auto-clipper
-    runtime: python
     env: python
     region: oregon
     plan: starter
     buildCommand: |
-      cd Clipception/non-mac-version && 
-      pip install -r requirements-cloud.txt &&
-      mkdir -p cookies videos uploads templates &&
-      cp -r ../TiktokAutoUploader ./ || true
+      # Install Chrome and dependencies
+      apt-get update && apt-get install -y \
+        chromium \
+        chromium-driver \
+        xvfb \
+        libglib2.0-0 \
+        libnss3 \
+        libgconf-2-4 \
+        libfontconfig1
+      
+      # Install Python dependencies
+      cd Clipception/non-mac-version && \
+      pip install -r requirements-cloud.txt
     startCommand: |
-      cd Clipception/non-mac-version &&
+      cd Clipception/non-mac-version && \
       gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300
     healthCheckPath: /health
     envVars:
-      - key: OPEN_ROUTER_KEY
-        sync: false  # Set this manually in Render dashboard
+      - key: FLASK_SECRET_KEY
+        generateValue: true
       - key: COOKIES_DIR
         value: /opt/render/project/src/Clipception/non-mac-version/cookies
       - key: VIDEOS_DIR
@@ -25,7 +33,11 @@ services:
       - key: UPLOADS_DIR
         value: /opt/render/project/src/Clipception/non-mac-version/uploads
       - key: TIKTOK_UPLOADER_DIR
-        value: /opt/render/project/src/TiktokAutoUploader
+        value: /opt/render/project/src/Clipception/non-mac-version/TiktokAutoUploader
+      - key: CHROME_BIN
+        value: /usr/bin/chromium
+      - key: CHROMEDRIVER_PATH
+        value: /usr/bin/chromedriver
       - key: FLASK_ENV
         value: production
       - key: PYTHONPATH

@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎬 TikTok Auto Clipper</title>
+    <title>TikTok Auto Clipper</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -220,310 +221,264 @@
                 font-size: 2em;
             }
         }
+
+        .loading {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🎬 TikTok Auto Clipper</h1>
-            <p>Turn any video into viral TikTok clips with AI</p>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">TikTok Auto Clipper</h1>
+        
+        <!-- TikTok Login Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">TikTok Account</h2>
+            <div id="loginSection">
+                <div class="flex items-center space-x-4">
+                    <input type="text" id="username" placeholder="TikTok Username" 
+                           class="flex-1 p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button onclick="loginToTikTok()" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        Sign in to TikTok
+                    </button>
+                </div>
+                <div id="loginStatus" class="mt-4 hidden">
+                    <div class="flex items-center space-x-2">
+                        <div id="loginSpinner" class="loading w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                        <span id="loginMessage"></span>
+                    </div>
+                </div>
+            </div>
+            <div id="accountSection" class="hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <span class="font-medium">Logged in as: </span>
+                        <span id="accountName" class="text-blue-600"></span>
+                    </div>
+                    <button onclick="logoutFromTikTok()" 
+                            class="text-red-500 hover:text-red-600 focus:outline-none">
+                        Sign out
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <div class="main-content">
-            <form id="clipperForm">
-                <div class="form-group">
-                    <label for="videoUrl">📹 Video URL or File Path</label>
-                    <input type="text" id="videoUrl" placeholder="https://www.twitch.tv/videos/123456789 or /path/to/video.mp4" required>
+        <!-- Video Processing Form -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">Process Video</h2>
+            <form id="processForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Video URL</label>
+                    <input type="text" id="videoUrl" required
+                           class="mt-1 block w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Enter YouTube, Twitch, or TikTok URL">
                 </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="tiktokUser">👤 TikTok Account</label>
-                        <select id="tiktokUser" required>
-                            <option value="">Select account...</option>
-                            {% for account in accounts %}
-                            <option value="{{ account }}">{{ account }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="maxUploads">📤 Max Uploads</label>
-                        <select id="maxUploads">
-                            <option value="1">1 clip</option>
-                            <option value="2">2 clips</option>
-                            <option value="3" selected>3 clips</option>
-                            <option value="5">5 clips</option>
-                            <option value="10">10 clips</option>
-                        </select>
-                    </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Base Title</label>
+                    <input type="text" id="baseTitle" required
+                           class="mt-1 block w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Enter base title for clips">
                 </div>
-
-                <div class="form-group">
-                    <label for="baseTitle">📝 Title Prefix (Optional)</label>
-                    <input type="text" id="baseTitle" placeholder="Epic Gaming Moments">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Max Uploads</label>
+                    <input type="number" id="maxUploads" min="1" max="10" value="3"
+                           class="mt-1 block w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
-
-                <button type="submit" class="btn" id="submitBtn">
-                    🚀 Start Processing & Upload
-                </button>
-
-                <button type="button" class="btn btn-secondary" onclick="openLoginModal()">
-                    🔑 Login to TikTok Account
+                
+                <button type="submit" 
+                        class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500">
+                    Process Video
                 </button>
             </form>
-
-            <div id="statusContainer" class="status-container">
-                <div class="status-message" id="statusMessage">Processing...</div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div id="progressText">0%</div>
-                <div id="clipsInfo" class="clips-info" style="display: none;">
-                    <strong>📊 Clips Generated:</strong> <span id="clipsCount">0</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Login Modal -->
-    <div id="loginModal" class="modal">
-        <div class="modal-content">
-            <span class="close" onclick="closeLoginModal()">&times;</span>
-            <h2>🔑 Login to TikTok</h2>
-            <p>Enter a name for your TikTok account:</p>
             
-            <div class="form-group">
-                <label for="accountName">Account Name</label>
-                <input type="text" id="accountName" placeholder="my_tiktok_account">
-            </div>
-            
-            <button class="btn" onclick="loginToTikTok()">
-                🚀 Start Login Process
-            </button>
-
-            <div class="accounts-list">
-                <h3>📱 Logged In Accounts:</h3>
-                <div id="accountsList"></div>
+            <!-- Processing Status -->
+            <div id="processingStatus" class="mt-6 hidden">
+                <div class="flex items-center space-x-2">
+                    <div id="processingSpinner" class="loading w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full"></div>
+                    <span id="processingMessage"></span>
+                </div>
+                <div class="mt-2">
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="progressBar" class="bg-green-500 h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentJobId = null;
-        let statusInterval = null;
+        let currentSessionId = null;
+        let authCheckInterval = null;
 
-        // Form submission
-        document.getElementById('clipperForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const formData = {
-                video_url: document.getElementById('videoUrl').value,
-                tiktok_user: document.getElementById('tiktokUser').value,
-                max_uploads: document.getElementById('maxUploads').value,
-                base_title: document.getElementById('baseTitle').value
-            };
-
-            try {
-                document.getElementById('submitBtn').disabled = true;
-                document.getElementById('submitBtn').textContent = '⏳ Starting...';
-
-                const response = await fetch('/api/submit_job', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(formData)
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    currentJobId = result.job_id;
-                    document.getElementById('statusContainer').style.display = 'block';
-                    startStatusPolling();
-                } else {
-                    alert('Error: ' + result.error);
-                    resetForm();
-                }
-            } catch (error) {
-                alert('Error: ' + error.message);
-                resetForm();
-            }
-        });
-
-        // Status polling
-        function startStatusPolling() {
-            if (statusInterval) clearInterval(statusInterval);
-            
-            statusInterval = setInterval(async () => {
-                if (!currentJobId) return;
-
-                try {
-                    const response = await fetch(`/api/job_status/${currentJobId}`);
-                    const job = await response.json();
-
-                    updateStatus(job);
-
-                    if (job.status === 'completed' || job.status === 'failed') {
-                        clearInterval(statusInterval);
-                        resetForm();
-                    }
-                } catch (error) {
-                    console.error('Error polling status:', error);
-                }
-            }, 2000);
-        }
-
-        // Update status display
-        function updateStatus(job) {
-            const statusMessage = document.getElementById('statusMessage');
-            const progressFill = document.getElementById('progressFill');
-            const progressText = document.getElementById('progressText');
-            const clipsInfo = document.getElementById('clipsInfo');
-            const clipsCount = document.getElementById('clipsCount');
-
-            // Status emojis
-            const statusEmojis = {
-                'queued': '⏳',
-                'downloading': '⬇️',
-                'transcribing': '🎤',
-                'analyzing': '🤖',
-                'extracting': '✂️',
-                'uploading': '📤',
-                'completed': '✅',
-                'failed': '❌'
-            };
-
-            const emoji = statusEmojis[job.status] || '⏳';
-            statusMessage.innerHTML = `<span class="emoji">${emoji}</span><span class="status-${job.status}">${job.message}</span>`;
-            
-            progressFill.style.width = job.progress + '%';
-            progressText.textContent = job.progress + '%';
-
-            if (job.clips_generated > 0) {
-                clipsInfo.style.display = 'block';
-                clipsCount.textContent = job.clips_generated;
-            }
-        }
-
-        // Reset form
-        function resetForm() {
-            document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').textContent = '🚀 Start Processing & Upload';
-        }
-
-        // Modal functions
-        function openLoginModal() {
-            document.getElementById('loginModal').style.display = 'block';
-            loadAccounts();
-        }
-
-        function closeLoginModal() {
-            document.getElementById('loginModal').style.display = 'none';
-        }
-
-        // Login to TikTok
         async function loginToTikTok() {
-            const accountName = document.getElementById('accountName').value.trim();
-            
-            if (!accountName) {
-                alert('Please enter an account name');
+            const username = document.getElementById('username').value.trim();
+            if (!username) {
+                alert('Please enter your TikTok username');
                 return;
             }
 
+            // Show loading state
+            document.getElementById('loginStatus').classList.remove('hidden');
+            document.getElementById('loginMessage').textContent = 'Starting authentication...';
+
             try {
-                const response = await fetch('/api/login_tiktok', {
+                const response = await fetch('/auth/tiktok', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ account_name: accountName })
+                    body: JSON.stringify({ username })
                 });
 
-                const result = await response.json();
+                const data = await response.json();
                 
-                if (response.ok) {
-                    alert(result.message);
-                    document.getElementById('accountName').value = '';
-                    
-                    // Refresh accounts after a delay
-                    setTimeout(() => {
-                        loadAccounts();
-                        refreshAccountSelect();
-                    }, 3000);
-                } else {
-                    alert('Error: ' + result.error);
+                if (data.error) {
+                    throw new Error(data.error);
                 }
+
+                currentSessionId = data.session_id;
+                document.getElementById('loginMessage').textContent = data.message;
+
+                // Start polling for auth status
+                if (authCheckInterval) {
+                    clearInterval(authCheckInterval);
+                }
+                
+                authCheckInterval = setInterval(checkAuthStatus, 2000);
+
             } catch (error) {
-                alert('Error: ' + error.message);
+                document.getElementById('loginMessage').textContent = `Error: ${error.message}`;
+                document.getElementById('loginSpinner').classList.add('hidden');
             }
         }
 
-        // Load accounts list
-        async function loadAccounts() {
+        async function checkAuthStatus() {
+            if (!currentSessionId) return;
+
             try {
-                const response = await fetch('/api/accounts');
-                const result = await response.json();
-                
-                const accountsList = document.getElementById('accountsList');
-                accountsList.innerHTML = '';
-                
-                if (result.accounts.length === 0) {
-                    accountsList.innerHTML = '<p>No accounts logged in yet.</p>';
-                } else {
-                    result.accounts.forEach(account => {
-                        const div = document.createElement('div');
-                        div.className = 'account-item';
-                        div.innerHTML = `<span>📱 ${account}</span><span>✅ Active</span>`;
-                        accountsList.appendChild(div);
-                    });
+                const response = await fetch(`/auth/tiktok/status/${currentSessionId}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
                 }
+
+                document.getElementById('loginMessage').textContent = data.message;
+
+                if (data.status === 'success') {
+                    // Authentication successful
+                    clearInterval(authCheckInterval);
+                    document.getElementById('loginSection').classList.add('hidden');
+                    document.getElementById('accountSection').classList.remove('hidden');
+                    document.getElementById('accountName').textContent = data.username;
+                    currentSessionId = null;
+                } else if (data.status === 'error') {
+                    // Authentication failed
+                    clearInterval(authCheckInterval);
+                    document.getElementById('loginSpinner').classList.add('hidden');
+                    currentSessionId = null;
+                }
+
             } catch (error) {
-                console.error('Error loading accounts:', error);
+                console.error('Auth status check failed:', error);
             }
         }
 
-        // Refresh account select dropdown
-        async function refreshAccountSelect() {
+        async function logoutFromTikTok() {
             try {
-                const response = await fetch('/api/accounts');
-                const result = await response.json();
+                const response = await fetch('/api/logout', { method: 'POST' });
+                const data = await response.json();
                 
-                const select = document.getElementById('tiktokUser');
-                const currentValue = select.value;
-                
-                // Clear existing options except first
-                select.innerHTML = '<option value="">Select account...</option>';
-                
-                // Add accounts
-                result.accounts.forEach(account => {
-                    const option = document.createElement('option');
-                    option.value = account;
-                    option.textContent = account;
-                    select.appendChild(option);
+                if (data.success) {
+                    document.getElementById('accountSection').classList.add('hidden');
+                    document.getElementById('loginSection').classList.remove('hidden');
+                    document.getElementById('username').value = '';
+                }
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        }
+
+        // Form submission
+        document.getElementById('processForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const videoUrl = document.getElementById('videoUrl').value.trim();
+            const baseTitle = document.getElementById('baseTitle').value.trim();
+            const maxUploads = document.getElementById('maxUploads').value;
+
+            if (!videoUrl || !baseTitle) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            // Show processing status
+            document.getElementById('processingStatus').classList.remove('hidden');
+            document.getElementById('processingMessage').textContent = 'Starting video processing...';
+            document.getElementById('progressBar').style.width = '0%';
+
+            try {
+                const response = await fetch('/api/submit_job', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        video_url: videoUrl,
+                        base_title: baseTitle,
+                        max_uploads: parseInt(maxUploads)
+                    })
                 });
+
+                const data = await response.json();
                 
-                // Restore selection if still valid
-                if (result.accounts.includes(currentValue)) {
-                    select.value = currentValue;
+                if (data.error) {
+                    throw new Error(data.error);
                 }
+
+                // Start polling for job status
+                pollJobStatus(data.job_id);
+
             } catch (error) {
-                console.error('Error refreshing accounts:', error);
+                document.getElementById('processingMessage').textContent = `Error: ${error.message}`;
+                document.getElementById('processingSpinner').classList.add('hidden');
             }
-        }
+        });
 
-        // Close modal when clicking outside
-        window.onclick = function(event) {
-            const modal = document.getElementById('loginModal');
-            if (event.target === modal) {
-                closeLoginModal();
-            }
-        }
+        async function pollJobStatus(jobId) {
+            const checkStatus = async () => {
+                try {
+                    const response = await fetch(`/api/job_status/${jobId}`);
+                    const data = await response.json();
 
-        // Load accounts on page load
-        window.onload = function() {
-            refreshAccountSelect();
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    document.getElementById('processingMessage').textContent = data.message;
+                    document.getElementById('progressBar').style.width = `${data.progress}%`;
+
+                    if (data.status === 'completed') {
+                        document.getElementById('processingSpinner').classList.add('hidden');
+                        clearInterval(statusInterval);
+                    } else if (data.status === 'failed') {
+                        document.getElementById('processingSpinner').classList.add('hidden');
+                        clearInterval(statusInterval);
+                    }
+
+                } catch (error) {
+                    console.error('Status check failed:', error);
+                }
+            };
+
+            const statusInterval = setInterval(checkStatus, 2000);
         }
     </script>
 </body>

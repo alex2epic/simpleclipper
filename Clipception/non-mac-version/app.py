@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 TikTok Auto Clipper Web Interface - Cloud Ready Version
-Optimized for Render deployment with dynamic path handling
+With secure browser-based TikTok authentication
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import subprocess
 import os
 import sys
@@ -12,17 +12,24 @@ import json
 import time
 import threading
 import uuid
+import secrets
 from pathlib import Path
 import re
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
 
 # Cloud-compatible configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_DIR = os.environ.get('COOKIES_DIR', os.path.join(BASE_DIR, 'cookies'))
 VIDEOS_DIR = os.environ.get('VIDEOS_DIR', os.path.join(BASE_DIR, 'videos'))
 UPLOADS_DIR = os.environ.get('UPLOADS_DIR', os.path.join(BASE_DIR, 'uploads'))
-TIKTOK_UPLOADER_DIR = os.environ.get('TIKTOK_UPLOADER_DIR', os.path.join(BASE_DIR, '..', 'TiktokAutoUploader'))
+TIKTOK_UPLOADER_DIR = os.environ.get('TIKTOK_UPLOADER_DIR', os.path.join(BASE_DIR, 'TiktokAutoUploader'))
 
 # Create necessary directories
 for directory in [COOKIES_DIR, VIDEOS_DIR, UPLOADS_DIR]:
@@ -35,6 +42,139 @@ if TIKTOK_UPLOADER_DIR not in sys.path:
 # Global job storage (in production, use Redis or database)
 jobs = {}
 job_lock = threading.Lock()
+
+def setup_selenium_driver():
+    """Setup headless Chrome for TikTok authentication"""
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    
+    # Add user agent to appear more like a real browser
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+    
+    return webdriver.Chrome(options=chrome_options)
+
+def save_tiktok_session(username, cookies):
+    """Save TikTok session cookies securely"""
+    session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
+    with open(session_file, 'w') as f:
+        json.dump(cookies, f)
+
+@app.route('/auth/tiktok', methods=['POST'])
+def tiktok_auth():
+    """Handle TikTok authentication"""
+    data = request.json
+    username = data.get('username', '').strip()
+    
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+    
+    try:
+        # Generate unique session ID
+        session_id = str(uuid.uuid4())
+        session['auth_session_id'] = session_id
+        
+        # Start authentication in background
+        thread = threading.Thread(
+            target=handle_tiktok_auth,
+            args=(username, session_id)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'status': 'processing',
+            'session_id': session_id,
+            'message': 'Starting TikTok authentication...'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def handle_tiktok_auth(username, session_id):
+    """Handle TikTok authentication in background"""
+    try:
+        driver = setup_selenium_driver()
+        
+        # Navigate to TikTok login
+        driver.get('https://www.tiktok.com/login')
+        
+        # Wait for login form
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="username"]'))
+        )
+        
+        # Store initial state
+        auth_state = {
+            'status': 'waiting',
+            'message': 'Please log in to TikTok in the popup window',
+            'session_id': session_id
+        }
+        
+        # Save state to file for frontend polling
+        state_file = os.path.join(COOKIES_DIR, f'auth_state-{session_id}.json')
+        with open(state_file, 'w') as f:
+            json.dump(auth_state, f)
+        
+        # Wait for successful login (check for session cookie)
+        WebDriverWait(driver, 60).until(
+            lambda d: any('sessionid' in cookie['name'].lower() for cookie in d.get_cookies())
+        )
+        
+        # Get all cookies
+        cookies = driver.get_cookies()
+        
+        # Save session
+        save_tiktok_session(username, cookies)
+        
+        # Update state
+        auth_state.update({
+            'status': 'success',
+            'message': 'Successfully logged in to TikTok',
+            'username': username
+        })
+        
+        with open(state_file, 'w') as f:
+            json.dump(auth_state, f)
+            
+    except Exception as e:
+        # Update state with error
+        auth_state.update({
+            'status': 'error',
+            'message': f'Authentication failed: {str(e)}'
+        })
+        
+        with open(state_file, 'w') as f:
+            json.dump(auth_state, f)
+            
+    finally:
+        try:
+            driver.quit()
+        except:
+            pass
+
+@app.route('/auth/tiktok/status/<session_id>')
+def auth_status(session_id):
+    """Check authentication status"""
+    state_file = os.path.join(COOKIES_DIR, f'auth_state-{session_id}.json')
+    
+    if not os.path.exists(state_file):
+        return jsonify({'error': 'Invalid session ID'}), 404
+    
+    with open(state_file, 'r') as f:
+        state = json.load(f)
+    
+    # Clean up state file if authentication is complete
+    if state['status'] in ['success', 'error']:
+        try:
+            os.remove(state_file)
+        except:
+            pass
+    
+    return jsonify(state)
 
 def is_url(string):
     """Check if string is a URL"""
@@ -231,27 +371,6 @@ def get_accounts():
     """Get list of TikTok accounts"""
     accounts = get_tiktok_accounts()
     return jsonify({'accounts': accounts})
-
-@app.route('/api/login_tiktok', methods=['POST'])
-def login_tiktok():
-    """Initiate TikTok login - Cloud Version"""
-    data = request.json
-    account_name = data.get('account_name', '').strip()
-    
-    if not account_name:
-        return jsonify({'error': 'Account name is required'}), 400
-    
-    # In cloud deployment, TikTok login requires manual cookie setup
-    return jsonify({
-        'message': 'TikTok login in cloud deployment requires manual cookie configuration.',
-        'instructions': [
-            '1. Login to TikTok on your local machine',
-            '2. Export the session cookies',
-            '3. Upload them to the server via admin panel',
-            '4. Contact admin for assistance with cookie setup'
-        ],
-        'note': 'Browser-based login not available in cloud environment'
-    })
 
 @app.route('/health')
 def health():
