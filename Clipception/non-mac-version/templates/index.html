@@ -336,16 +336,47 @@
 
         function copyCookieCode() {
             const code = `(() => {
-                const msToken = document.cookie.split(';')
-                    .find(c => c.trim().startsWith('msToken='))
-                    ?.split('=')[1];
-                    
-                if (!msToken) {
-                    return 'Error: Please make sure you are logged into TikTok';
+            // First get the msToken
+            const msToken = document.cookie.split(';')
+                .find(c => c.trim().startsWith('msToken='))
+                ?.split('=')[1];
+            
+            if (!msToken) {
+                return 'Error: Please make sure you are logged into TikTok';
+            }
+            
+            // Make a request to get the other cookies
+            return fetch('https://www.tiktok.com/api/user/detail/', {
+                credentials: 'include',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.tiktok.com/',
+                    'Origin': 'https://www.tiktok.com'
+                }
+            })
+            .then(response => {
+                // Get all cookies from the response
+                const cookies = response.headers.get('set-cookie');
+                console.log('Response cookies:', cookies);
+                
+                // Extract the cookies we need
+                const sessionid = cookies?.match(/sessionid=([^;]+)/)?.[1];
+                const ttwid = cookies?.match(/ttwid=([^;]+)/)?.[1];
+                
+                if (!sessionid || !ttwid) {
+                    throw new Error('Could not get required cookies');
                 }
                 
-                return 'msToken=' + msToken;
-            })()`;
+                // Return all cookies
+                return \`sessionid=\${sessionid}; ttwid=\${ttwid}; msToken=\${msToken}\`;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                return 'Error: Could not get TikTok cookies. Please try again.';
+            });
+        })()`;
             
             navigator.clipboard.writeText(code).then(() => {
                 alert('Cookie code copied! Now:\n1. Open TikTok in a new tab\n2. Press F12 to open Developer Tools\n3. Go to Console tab\n4. Paste and press Enter\n5. Copy the result back here');

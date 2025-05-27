@@ -61,10 +61,13 @@ def simple_tiktok_auth():
         # Parse the simple cookie format
         cookies = parse_simple_cookies(cookies_text)
         
-        # For now, just check for msToken
-        if 'msToken' not in cookies:
+        # Validate we have all required cookies
+        required_cookies = ['sessionid', 'ttwid', 'msToken']
+        missing_cookies = [cookie for cookie in required_cookies if cookie not in cookies]
+        
+        if missing_cookies:
             return jsonify({
-                'error': 'Missing msToken. Make sure you\'re logged into TikTok and try again.'
+                'error': f'Missing required cookies: {", ".join(missing_cookies)}. Make sure you\'re logged into TikTok and try again.'
             }), 400
         
         # Test if cookies actually work
@@ -116,8 +119,12 @@ def parse_simple_cookies(cookies_text):
 def test_tiktok_cookies(cookies):
     """Test if TikTok cookies are valid by making a simple request"""
     try:
-        # For now, just check if we have msToken
-        if 'msToken' not in cookies:
+        # Check for all required cookies
+        required_cookies = ['sessionid', 'ttwid', 'msToken']
+        missing_cookies = [cookie for cookie in required_cookies if cookie not in cookies]
+        
+        if missing_cookies:
+            print(f"Missing required cookies: {missing_cookies}")
             return False
             
         # Create a session with the cookies
@@ -143,8 +150,15 @@ def test_tiktok_cookies(cookies):
             timeout=10
         )
         
-        # For now, just check if we get a response
-        return response.status_code == 200
+        # Check if we got a valid response
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                return 'userInfo' in data
+            except:
+                return False
+        
+        return False
         
     except Exception as e:
         print(f"Cookie test failed: {e}")
