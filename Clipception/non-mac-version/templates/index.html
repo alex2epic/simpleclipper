@@ -336,16 +336,15 @@
 
         function copyCookieCode() {
             const code = `(() => {
-                const cookies = document.cookie.split(';').map(c => c.trim());
-                const sessionid = cookies.find(c => c.startsWith('sessionid='));
-                const ttwid = cookies.find(c => c.startsWith('ttwid='));
-                const msToken = cookies.find(c => c.startsWith('msToken='));
-                
-                if (!sessionid || !ttwid || !msToken) {
-                    return 'Error: Missing required cookies. Please make sure you are logged into TikTok.';
+                const msToken = document.cookie.split(';')
+                    .find(c => c.trim().startsWith('msToken='))
+                    ?.split('=')[1];
+                    
+                if (!msToken) {
+                    return 'Error: Please make sure you are logged into TikTok';
                 }
                 
-                return [sessionid, ttwid, msToken].join('; ');
+                return 'msToken=' + msToken;
             })()`;
             
             navigator.clipboard.writeText(code).then(() => {
