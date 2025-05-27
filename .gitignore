@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+*.log
+*.pot
+*.mo
+*.sqlite3
+*.db
+
+# Virtual environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# TikTokAutoUploader specific
+TiktokAutoUploader/CookiesDir/
+TiktokAutoUploader/VideosDirPath/
+TiktokAutoUploader/config.txt # If it contains sensitive info, otherwise keep
+
+# Clipception specific
+Clipception/non-mac-version/downloads/
+Clipception/non-mac-version/FeatureTranscribe/
+Clipception/non-mac-version/clipception_env/
+Clipception/non-mac-version/__pycache__/
+Clipception/non-mac-version/*.mp4
+Clipception/non-mac-version/*.mkv
+Clipception/non-mac-version/*.webm
+Clipception/non-mac-version/*.flv
+Clipception/non-mac-version/*.json # Be careful if some JSON files are needed
+Clipception/non-mac-version/*.wav
+Clipception/non-mac-version/*.mp3
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sensitive files
+credentials.json
+secrets.yaml
+*.pem
+*.key
+
+# Local development files
+local_settings.py
+debug.log 

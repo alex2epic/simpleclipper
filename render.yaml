@@ -1,0 +1,87 @@
+services:
+  # Main Web Application
+  - type: web
+    name: tiktok-auto-clipper
+    runtime: python
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: |
+      cd Clipception/non-mac-version && 
+      pip install -r requirements-cloud.txt &&
+      mkdir -p cookies videos uploads templates &&
+      cp -r ../TiktokAutoUploader ./ || true
+    startCommand: |
+      cd Clipception/non-mac-version &&
+      gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300
+    healthCheckPath: /health
+    envVars:
+      - key: OPEN_ROUTER_KEY
+        sync: false  # Set this manually in Render dashboard
+      - key: COOKIES_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/cookies
+      - key: VIDEOS_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/videos
+      - key: UPLOADS_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/uploads
+      - key: TIKTOK_UPLOADER_DIR
+        value: /opt/render/project/src/TiktokAutoUploader
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHONPATH
+        value: /opt/render/project/src/Clipception/non-mac-version:/opt/render/project/src/TiktokAutoUploader
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  # Background Worker (Optional - for processing jobs)
+  - type: worker
+    name: video-processor
+    runtime: python
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: |
+      cd Clipception/non-mac-version && 
+      pip install -r requirements-cloud.txt &&
+      mkdir -p cookies videos uploads &&
+      cp -r ../TiktokAutoUploader ./ || true
+    startCommand: |
+      cd Clipception/non-mac-version &&
+      python worker.py
+    envVars:
+      - key: OPEN_ROUTER_KEY
+        sync: false
+      - key: COOKIES_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/cookies
+      - key: VIDEOS_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/videos
+      - key: UPLOADS_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/uploads
+      - key: TIKTOK_UPLOADER_DIR
+        value: /opt/render/project/src/TiktokAutoUploader
+      - key: PYTHONPATH
+        value: /opt/render/project/src/Clipception/non-mac-version:/opt/render/project/src/TiktokAutoUploader
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  # File Cleanup Cron Job
+  - type: cron
+    name: cleanup-temp-files
+    runtime: python
+    env: python
+    region: oregon
+    plan: starter
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    buildCommand: |
+      cd Clipception/non-mac-version && 
+      pip install -r requirements-cloud.txt
+    startCommand: |
+      cd Clipception/non-mac-version &&
+      python cleanup.py
+    envVars:
+      - key: COOKIES_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/cookies
+      - key: VIDEOS_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/videos
+      - key: UPLOADS_DIR
+        value: /opt/render/project/src/Clipception/non-mac-version/uploads 
