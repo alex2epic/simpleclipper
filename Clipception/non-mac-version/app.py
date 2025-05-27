@@ -31,9 +31,14 @@ VIDEOS_DIR = os.environ.get('VIDEOS_DIR', os.path.join(BASE_DIR, 'videos'))
 UPLOADS_DIR = os.environ.get('UPLOADS_DIR', os.path.join(BASE_DIR, 'uploads'))
 TIKTOK_UPLOADER_DIR = os.environ.get('TIKTOK_UPLOADER_DIR', os.path.join(BASE_DIR, 'TiktokAutoUploader'))
 
-# Create necessary directories
+# Create necessary directories with proper permissions
 for directory in [COOKIES_DIR, VIDEOS_DIR, UPLOADS_DIR]:
-    os.makedirs(directory, exist_ok=True)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        # Ensure directory is writable
+        os.chmod(directory, 0o777)
+    except Exception as e:
+        print(f"Warning: Could not create directory {directory}: {e}")
 
 # Add TikTok uploader to Python path
 if TIKTOK_UPLOADER_DIR not in sys.path:
@@ -46,22 +51,35 @@ job_lock = threading.Lock()
 def setup_selenium_driver():
     """Setup headless Chrome for TikTok authentication"""
     chrome_options = Options()
-    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--headless=new')  # Updated headless mode
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')
     chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-infobars')
+    chrome_options.add_argument('--disable-notifications')
     
     # Add user agent to appear more like a real browser
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
     
-    return webdriver.Chrome(options=chrome_options)
+    try:
+        return webdriver.Chrome(options=chrome_options)
+    except Exception as e:
+        print(f"Error creating Chrome driver: {e}")
+        raise
 
 def save_tiktok_session(username, cookies):
     """Save TikTok session cookies securely"""
-    session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
-    with open(session_file, 'w') as f:
-        json.dump(cookies, f)
+    try:
+        session_file = os.path.join(COOKIES_DIR, f'tiktok_session-{username}.json')
+        with open(session_file, 'w') as f:
+            json.dump(cookies, f)
+        # Ensure file is writable
+        os.chmod(session_file, 0o666)
+    except Exception as e:
+        print(f"Error saving session: {e}")
+        raise
 
 @app.route('/auth/tiktok', methods=['POST'])
 def tiktok_auth():
@@ -96,7 +114,21 @@ def tiktok_auth():
 
 def handle_tiktok_auth(username, session_id):
     """Handle TikTok authentication in background"""
+    state_file = os.path.join(COOKIES_DIR, f'auth_state-{session_id}.json')
+    
     try:
+        # Initialize state
+        auth_state = {
+            'status': 'waiting',
+            'message': 'Please log in to TikTok in the popup window',
+            'session_id': session_id
+        }
+        
+        # Save initial state
+        with open(state_file, 'w') as f:
+            json.dump(auth_state, f)
+        os.chmod(state_file, 0o666)
+        
         driver = setup_selenium_driver()
         
         # Navigate to TikTok login
@@ -106,18 +138,6 @@ def handle_tiktok_auth(username, session_id):
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[name="username"]'))
         )
-        
-        # Store initial state
-        auth_state = {
-            'status': 'waiting',
-            'message': 'Please log in to TikTok in the popup window',
-            'session_id': session_id
-        }
-        
-        # Save state to file for frontend polling
-        state_file = os.path.join(COOKIES_DIR, f'auth_state-{session_id}.json')
-        with open(state_file, 'w') as f:
-            json.dump(auth_state, f)
         
         # Wait for successful login (check for session cookie)
         WebDriverWait(driver, 60).until(
@@ -139,6 +159,7 @@ def handle_tiktok_auth(username, session_id):
         
         with open(state_file, 'w') as f:
             json.dump(auth_state, f)
+        os.chmod(state_file, 0o666)
             
     except Exception as e:
         # Update state with error
@@ -147,8 +168,12 @@ def handle_tiktok_auth(username, session_id):
             'message': f'Authentication failed: {str(e)}'
         })
         
-        with open(state_file, 'w') as f:
-            json.dump(auth_state, f)
+        try:
+            with open(state_file, 'w') as f:
+                json.dump(auth_state, f)
+            os.chmod(state_file, 0o666)
+        except:
+            pass
             
     finally:
         try:
