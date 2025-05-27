@@ -61,7 +61,7 @@ def simple_tiktok_auth():
         # Parse the simple cookie format
         cookies = parse_simple_cookies(cookies_text)
         
-        # Validate we have all required cookies
+        # Validate we have the essential cookies
         required_cookies = ['sessionid', 'ttwid', 'msToken']
         missing_cookies = [cookie for cookie in required_cookies if cookie not in cookies]
         
@@ -96,10 +96,10 @@ def simple_tiktok_auth():
         }), 500
 
 def parse_simple_cookies(cookies_text):
-    """Parse cookies from the simple JavaScript output"""
+    """Parse cookies from raw document.cookie output"""
     cookies = {}
     
-    # Remove quotes if present
+    # Remove any quotes if present
     cookies_text = cookies_text.strip('"\'')
     
     # Split by semicolon and parse each cookie
@@ -110,8 +110,8 @@ def parse_simple_cookies(cookies_text):
             name = name.strip()
             value = value.strip()
             
-            # Only store the first occurrence of each cookie
-            if name not in cookies:
+            # Only keep TikTok-relevant cookies
+            if any(keyword in name.lower() for keyword in ['sessionid', 'ttwid', 'mstoken', 'sid_guard', 'uid_tt', 'sid_tt']):
                 cookies[name] = value
     
     return cookies
@@ -119,14 +119,6 @@ def parse_simple_cookies(cookies_text):
 def test_tiktok_cookies(cookies):
     """Test if TikTok cookies are valid by making a simple request"""
     try:
-        # Check for all required cookies
-        required_cookies = ['sessionid', 'ttwid', 'msToken']
-        missing_cookies = [cookie for cookie in required_cookies if cookie not in cookies]
-        
-        if missing_cookies:
-            print(f"Missing required cookies: {missing_cookies}")
-            return False
-            
         # Create a session with the cookies
         session = requests.Session()
         
@@ -136,29 +128,13 @@ def test_tiktok_cookies(cookies):
         
         # Make a simple request to TikTok
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://www.tiktok.com/',
-            'Origin': 'https://www.tiktok.com'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # Try to get user info
-        response = session.get(
-            'https://www.tiktok.com/api/user/detail/',
-            headers=headers,
-            timeout=10
-        )
+        response = session.get('https://www.tiktok.com/api/user/detail/', headers=headers, timeout=10)
         
-        # Check if we got a valid response
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                return 'userInfo' in data
-            except:
-                return False
-        
-        return False
+        # If we get a response that's not a login redirect, cookies are good
+        return response.status_code != 401 and 'login' not in response.url.lower()
         
     except Exception as e:
         print(f"Cookie test failed: {e}")
