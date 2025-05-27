@@ -107,7 +107,12 @@ def parse_simple_cookies(cookies_text):
         cookie_pair = cookie_pair.strip()
         if '=' in cookie_pair:
             name, value = cookie_pair.split('=', 1)
-            cookies[name.strip()] = value.strip()
+            name = name.strip()
+            value = value.strip()
+            
+            # Only store the first occurrence of each cookie
+            if name not in cookies:
+                cookies[name] = value
     
     return cookies
 
@@ -123,13 +128,29 @@ def test_tiktok_cookies(cookies):
         
         # Make a simple request to TikTok
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.tiktok.com/',
+            'Origin': 'https://www.tiktok.com'
         }
         
-        response = session.get('https://www.tiktok.com/api/user/detail/', headers=headers, timeout=10)
+        # Try to get user info
+        response = session.get(
+            'https://www.tiktok.com/api/user/detail/',
+            headers=headers,
+            timeout=10
+        )
         
-        # If we get a response that's not a login redirect, cookies are good
-        return response.status_code != 401 and 'login' not in response.url.lower()
+        # Check if we got a valid response
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                return 'userInfo' in data
+            except:
+                return False
+        
+        return False
         
     except Exception as e:
         print(f"Cookie test failed: {e}")

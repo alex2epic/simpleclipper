@@ -335,7 +335,19 @@
         let authCheckInterval = null;
 
         function copyCookieCode() {
-            const code = `document.cookie.split(';').filter(c=>c.includes('sessionid')||c.includes('ttwid')||c.includes('msToken')).join(';')`;
+            const code = `(() => {
+                const cookies = document.cookie.split(';').map(c => c.trim());
+                const sessionid = cookies.find(c => c.startsWith('sessionid='));
+                const ttwid = cookies.find(c => c.startsWith('ttwid='));
+                const msToken = cookies.find(c => c.startsWith('msToken='));
+                
+                if (!sessionid || !ttwid || !msToken) {
+                    return 'Error: Missing required cookies. Please make sure you are logged into TikTok.';
+                }
+                
+                return [sessionid, ttwid, msToken].join('; ');
+            })()`;
+            
             navigator.clipboard.writeText(code).then(() => {
                 alert('Cookie code copied! Now:\n1. Open TikTok in a new tab\n2. Press F12 to open Developer Tools\n3. Go to Console tab\n4. Paste and press Enter\n5. Copy the result back here');
             });
@@ -352,6 +364,11 @@
             
             if (!cookies) {
                 alert('Please paste the cookie result from TikTok');
+                return;
+            }
+
+            if (cookies.includes('Error:')) {
+                alert('Please make sure you are logged into TikTok and try again');
                 return;
             }
 
